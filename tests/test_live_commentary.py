@@ -141,9 +141,7 @@ async def test_incident_is_used_when_comments_are_unavailable():
 
     await instance.poll_once("user-1")
 
-    assert notifier.messages == [
-        ("user-1", "Goal for Real Madrid in the 65th minute.")
-    ]
+    assert notifier.messages == [("user-1", "Goal for Real Madrid in the 65th minute.")]
 
 
 @pytest.mark.asyncio
@@ -183,4 +181,3 @@ async def test_repeated_start_for_same_match_is_idempotent():
 
     assert first is True
     assert second is False
-

@@ -92,9 +92,7 @@ async def test_query_returns_neutral_unavailable_message():
         status=LookupStatus.UNAVAILABLE_OR_NOT_FOUND,
         message="Match coverage is unavailable.",
     )
-    tool = FootballTool(
-        soccer=FakeSoccerService(result), commentary=FakeCommentaryManager()
-    )
+    tool = FootballTool(soccer=FakeSoccerService(result), commentary=FakeCommentaryManager())
 
     response = await tool.handle(request("query", match_query="Unknown FC"))
 
@@ -111,13 +109,9 @@ async def test_start_commentary_creates_user_session():
     manager = FakeCommentaryManager()
     tool = FootballTool(soccer=FakeSoccerService(result), commentary=manager)
 
-    response = await tool.handle(
-        request("start_commentary", match_query="Real Madrid Arsenal")
-    )
+    response = await tool.handle(request("start_commentary", match_query="Real Madrid Arsenal"))
 
-    assert response == {
-        "result": "Live commentary started for Real Madrid vs Arsenal."
-    }
+    assert response == {"result": "Live commentary started for Real Madrid vs Arsenal."}
     assert manager.start_calls == [("user-1", 42)]
 
 
@@ -133,13 +127,9 @@ async def test_repeated_start_is_idempotent():
         commentary=FakeCommentaryManager(started=False),
     )
 
-    response = await tool.handle(
-        request("start_commentary", match_query="Real Madrid Arsenal")
-    )
+    response = await tool.handle(request("start_commentary", match_query="Real Madrid Arsenal"))
 
-    assert response == {
-        "result": "Live commentary is already active for this match."
-    }
+    assert response == {"result": "Live commentary is already active for this match."}
 
 
 @pytest.mark.asyncio
@@ -152,9 +142,7 @@ async def test_non_popular_match_rejects_continuous_commentary():
     manager = FakeCommentaryManager()
     tool = FootballTool(soccer=FakeSoccerService(result), commentary=manager)
 
-    response = await tool.handle(
-        request("start_commentary", match_query="Local Town Village FC")
-    )
+    response = await tool.handle(request("start_commentary", match_query="Local Town Village FC"))
 
     assert response == {
         "result": (
@@ -193,13 +181,10 @@ async def test_stop_without_session_is_harmless():
 
 @pytest.mark.asyncio
 async def test_query_requires_match_reference():
-    tool = FootballTool(
-        soccer=FakeSoccerService(None), commentary=FakeCommentaryManager()
-    )
+    tool = FootballTool(soccer=FakeSoccerService(None), commentary=FakeCommentaryManager())
 
     response = await tool.handle(request("query"))
 
     assert response == {
         "error": "Provide a match query or match ID before requesting match information."
     }
-

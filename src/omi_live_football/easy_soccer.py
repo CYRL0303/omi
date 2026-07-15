@@ -49,6 +49,37 @@ def _name(value: Any) -> str | None:
     return str(name) if name else None
 
 
+def apply_substitutions(snapshot: MatchSnapshot) -> None:
+    """Update each lineup's current players from substitution incidents."""
+
+    for incident in snapshot.incidents:
+        if incident.type != "substitution" or not incident.team:
+            continue
+        if _normalized(incident.team) == _normalized(snapshot.home_team):
+            lineup = snapshot.home_lineup
+        elif _normalized(incident.team) == _normalized(snapshot.away_team):
+            lineup = snapshot.away_lineup
+        else:
+            lineup = None
+        if lineup is None:
+            continue
+
+        if incident.player_out:
+            outgoing = _normalized(incident.player_out)
+            lineup.current_players = [
+                player for player in lineup.current_players if _normalized(player.name) != outgoing
+            ]
+        if incident.player_in:
+            incoming = _normalized(incident.player_in)
+            candidates = lineup.starters + lineup.substitutes
+            player = next(
+                (item for item in candidates if _normalized(item.name) == incoming),
+                PlayerInfo(name=incident.player_in),
+            )
+            if all(_normalized(item.name) != incoming for item in lineup.current_players):
+                lineup.current_players.append(player)
+
+
 class EasySoccerService:
     """Resolve queries and normalize EasySoccerData match information."""
 
@@ -81,7 +112,7 @@ class EasySoccerService:
             if match_id is not None:
                 selected = await asyncio.to_thread(self.client.get_event, match_id)
             else:
-                events = await asyncio.to_thread(self.client.get_events, date or "today", False)
+                events = await asyncio.to_thread(self._list_events, date)
                 selected_result = self._select(events, query or "", competition)
                 if isinstance(selected_result, LookupResult):
                     return selected_result
@@ -90,6 +121,28 @@ class EasySoccerService:
             return self._unavailable()
 
         return await self._snapshot(selected)
+
+    def _list_events(self, date: str | None) -> list[Any]:
+        requested_date = date or "today"
+        is_today = requested_date == "today" or requested_date == self.now().date().isoformat()
+        events: list[Any] = []
+
+        if is_today:
+            try:
+                events.extend(self.client.get_events(requested_date, True))
+            except Exception:
+                pass
+        try:
+            events.extend(self.client.get_events(requested_date, False))
+        except Exception:
+            pass
+
+        unique: dict[int, Any] = {}
+        for event in events:
+            event_id = getattr(event, "id", None)
+            if event_id is not None:
+                unique[int(event_id)] = event
+        return list(unique.values())
 
     def _select(self, events: list[Any], query: str, competition: str | None) -> Any | LookupResult:
         filtered = [
@@ -151,6 +204,7 @@ class EasySoccerService:
             snapshot.comments = [self._comment(item) for item in values["comments"]]
         if "statistics" in values:
             snapshot.statistics = self._plain(values["statistics"])
+        apply_substitutions(snapshot)
         snapshot.missing_fields = sorted(missing)
         status = LookupStatus.PARTIAL if missing else LookupStatus.FULL
         message = self._summary(snapshot)
@@ -309,10 +363,50 @@ class EasySoccerService:
     @staticmethod
     def _summary(snapshot: MatchSnapshot) -> str:
         score = snapshot.score or "score unavailable"
-        return (
+        parts = [
             f"{snapshot.home_team} {score} {snapshot.away_team}. "
             f"Status: {snapshot.status_description or snapshot.state.value}."
-        )
+        ]
+        if snapshot.minute is not None:
+            parts.append(f"Minute: {snapshot.minute}.")
+        if snapshot.competition:
+            parts.append(f"Competition: {snapshot.competition}.")
+
+        for team_name, lineup in (
+            (snapshot.home_team, snapshot.home_lineup),
+            (snapshot.away_team, snapshot.away_lineup),
+        ):
+            if lineup is None:
+                continue
+            if lineup.formation:
+                parts.append(f"{team_name} formation: {lineup.formation}.")
+            if lineup.current_players:
+                names = ", ".join(player.name for player in lineup.current_players)
+                parts.append(f"Current players: {names}.")
+            if lineup.substitutes:
+                names = ", ".join(player.name for player in lineup.substitutes)
+                parts.append(f"Substitutes: {names}.")
+            if lineup.coach:
+                parts.append(f"Coach: {lineup.coach}.")
+
+        if snapshot.incidents:
+            items = []
+            for incident in snapshot.incidents[-5:]:
+                minute = f"{incident.minute}' " if incident.minute is not None else ""
+                label = incident.text or incident.type.replace("_", " ").title()
+                player = f" ({incident.player})" if incident.player else ""
+                items.append(f"{minute}{label}{player}")
+            parts.append(f"Recent incidents: {'; '.join(items)}.")
+        if snapshot.comments:
+            items = [
+                f"{item.minute}' {item.text}" if item.minute is not None else item.text
+                for item in snapshot.comments[-5:]
+            ]
+            parts.append(f"Recent commentary: {'; '.join(items)}")
+        if snapshot.statistics is not None:
+            parts.append("Statistics: available.")
+        parts.append(f"Updated: {snapshot.data_updated_at.isoformat()}.")
+        return " ".join(parts)
 
     @staticmethod
     def _unavailable() -> LookupResult:

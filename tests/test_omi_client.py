@@ -12,9 +12,7 @@ async def test_notification_uses_omi_direct_notification_contract():
     route = respx.post("https://api.omi.me/v2/integrations/app-1/notification").mock(
         return_value=httpx.Response(200, json={"ok": True})
     )
-    client = OmiNotificationClient(
-        Settings(omi_app_id="app-1", omi_app_secret="secret-1")
-    )
+    client = OmiNotificationClient(Settings(omi_app_id="app-1", omi_app_secret="secret-1"))
 
     await client.send("user-1", "Goal for Real Madrid.")
 

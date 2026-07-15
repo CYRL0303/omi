@@ -59,4 +59,3 @@ class OmiNotificationClient:
             return max(0.0, float(response.headers.get("Retry-After", "1")))
         except ValueError:
             return 1.0
-

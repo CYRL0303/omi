@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
 from fastapi import FastAPI
 
-from .football_tool import ToolRequest
+from .config import Settings
+from .easy_soccer import EasySoccerService
+from .football_tool import FootballTool, ToolRequest
+from .live_commentary import LiveCommentaryManager
+from .omi_client import OmiNotificationClient
 
 
 class ToolHandler(Protocol):
@@ -40,9 +46,7 @@ def build_manifest() -> dict[str, Any]:
                         },
                         "match_query": {
                             "type": "string",
-                            "description": (
-                                "Team names and optionally a date or competition."
-                            ),
+                            "description": ("Team names and optionally a date or competition."),
                         },
                         "match_id": {
                             "type": "integer",
@@ -66,10 +70,14 @@ def build_manifest() -> dict[str, Any]:
     }
 
 
-def create_app(tool: ToolHandler) -> FastAPI:
+def create_app(
+    tool: ToolHandler,
+    *,
+    lifespan: Callable[[FastAPI], Any] | None = None,
+) -> FastAPI:
     """Create the HTTP application with an injected tool handler."""
 
-    app = FastAPI(title="Omi Live Football")
+    app = FastAPI(title="Omi Live Football", lifespan=lifespan)
 
     @app.get("/.well-known/omi-tools.json")
     async def manifest() -> dict[str, Any]:
@@ -84,3 +92,33 @@ def create_app(tool: ToolHandler) -> FastAPI:
         return {"status": "ok"}
 
     return app
+
+
+def create_default_app(settings: Settings | None = None) -> FastAPI:
+    """Compose the production application using one in-memory process."""
+
+    runtime_settings = settings or Settings.from_env()
+    soccer = EasySoccerService(settings=runtime_settings)
+    notifier = OmiNotificationClient(runtime_settings)
+    commentary = LiveCommentaryManager(
+        soccer=soccer,
+        notifier=notifier,
+        settings=runtime_settings,
+    )
+    tool = FootballTool(soccer=soccer, commentary=commentary)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await commentary.close()
+            await notifier.aclose()
+
+    application = create_app(tool, lifespan=lifespan)
+    application.state.commentary = commentary
+    application.state.notification_client = notifier
+    return application
+
+
+app = create_default_app()

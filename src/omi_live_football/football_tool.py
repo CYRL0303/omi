@@ -63,9 +63,7 @@ class FootballTool:
 
         if not request.match_query and request.match_id is None:
             return {
-                "error": (
-                    "Provide a match query or match ID before requesting match information."
-                )
+                "error": ("Provide a match query or match ID before requesting match information.")
             }
 
         result = await self.soccer.lookup(
@@ -77,10 +75,14 @@ class FootballTool:
         if request.action is ToolAction.QUERY:
             return {"result": result.message}
 
-        if result.status in {
-            LookupStatus.AMBIGUOUS,
-            LookupStatus.UNAVAILABLE_OR_NOT_FOUND,
-        } or result.match is None:
+        if (
+            result.status
+            in {
+                LookupStatus.AMBIGUOUS,
+                LookupStatus.UNAVAILABLE_OR_NOT_FOUND,
+            }
+            or result.match is None
+        ):
             return {"result": result.message}
 
         match = result.match
@@ -105,9 +107,4 @@ class FootballTool:
         started = await self.commentary.start(request.uid, match)
         if not started:
             return {"result": "Live commentary is already active for this match."}
-        return {
-            "result": (
-                f"Live commentary started for {match.home_team} vs {match.away_team}."
-            )
-        }
-
+        return {"result": (f"Live commentary started for {match.home_team} vs {match.away_team}.")}
